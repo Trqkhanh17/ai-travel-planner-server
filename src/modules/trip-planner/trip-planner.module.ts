@@ -7,6 +7,7 @@ import { TripPlannerService } from './trip-planner.service';
 import { GeminiAiService } from './services/gemini-ai.service';
 import { AiUsage, AiUsageSchema } from './schemas/ai-usage.schema';
 import { AiQuotaService } from './services/ai-quota.service';
+import { TripPlanRepository } from './trip-plan.repository';
 
 @Module({
   imports: [
@@ -17,7 +18,12 @@ import { AiQuotaService } from './services/ai-quota.service';
     ]),
   ],
   controllers: [TripPlannerController],
-  providers: [TripPlannerService, GeminiAiService, AiQuotaService],
+  providers: [
+    TripPlannerService,
+    GeminiAiService,
+    AiQuotaService,
+    TripPlanRepository,
+  ],
   exports: [TripPlannerService, GeminiAiService],
 })
 export class TripPlannerModule {}
