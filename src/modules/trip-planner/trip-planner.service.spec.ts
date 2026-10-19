@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import type { Model } from 'mongoose';
+import type { TripPlanRepository } from './trip-plan.repository';
 import { GeminiAiService } from './services/gemini-ai.service';
 import type { TripPlanDocument } from './schemas/trip-plan.schema';
 import { TripPlannerService } from './trip-planner.service';
@@ -47,7 +47,7 @@ describe('TripPlannerService', () => {
       storedData = data;
       return Promise.resolve(data);
     });
-    const model = { create } as unknown as Model<TripPlanDocument>;
+    const model = { create } as unknown as TripPlanRepository;
     const ai = {
       generateTripPlan: jest.fn().mockResolvedValue(aiResult),
     } as unknown as GeminiAiService;
@@ -76,12 +76,8 @@ describe('TripPlannerService', () => {
       userId: { toString: () => 'owner-id' },
     } as TripPlanDocument;
     const model = {
-      findById: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          exec: jest.fn().mockResolvedValue(plan),
-        }),
-      }),
-    } as unknown as Model<TripPlanDocument>;
+      findByIdWithGuestToken: jest.fn().mockResolvedValue(plan),
+    } as unknown as TripPlanRepository;
     const service = new TripPlannerService(
       model,
       {} as GeminiAiService,
