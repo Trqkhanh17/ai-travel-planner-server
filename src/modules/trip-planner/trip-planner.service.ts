@@ -1,18 +1,18 @@
+import { TripPlanRepository } from './trip-plan.repository';
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Types } from 'mongoose';
 import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import {
   comparePassword,
   hashPassword,
 } from '@/common/helpers/password.helpers';
-import { TripPlan, TripPlanDocument } from './schemas/trip-plan.schema';
+import type { TripPlanDocument } from './schemas/trip-plan.schema';
 import { CreateTripPlanDto } from './dto/create-trip-plan.dto';
 import { GeminiAiService } from './services/gemini-ai.service';
 import {
@@ -28,8 +28,7 @@ export interface GeneratedPlan {
 @Injectable()
 export class TripPlannerService {
   constructor(
-    @InjectModel(TripPlan.name)
-    private readonly tripPlanModel: Model<TripPlanDocument>,
+    private readonly tripPlanRepository: TripPlanRepository,
     private readonly geminiAiService: GeminiAiService,
     private readonly aiQuotaService: AiQuotaService,
     private readonly configService: ConfigService,
@@ -61,7 +60,7 @@ export class TripPlannerService {
               60 *
               1000,
         );
-    const newTripPlan = await this.tripPlanModel.create({
+    const newTripPlan = await this.tripPlanRepository.create({
       userId: userId ? new Types.ObjectId(userId) : null,
       guestTokenHash: guestManageToken
         ? await hashPassword(guestManageToken)
@@ -85,17 +84,7 @@ export class TripPlannerService {
       throw new BadRequestException('User ID không hợp lệ.');
     }
     const filter = { userId: new Types.ObjectId(userId) };
-    const [data, total] = await Promise.all([
-      this.tripPlanModel
-        .find(filter)
-        .select('-userId')
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .exec(),
-      this.tripPlanModel.countDocuments(filter).exec(),
-    ]);
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return this.tripPlanRepository.findPage(filter, page, limit);
   }
 
   async getPublicPlans(page = 1, limit = 10) {
@@ -104,17 +93,7 @@ export class TripPlannerService {
       userId: { $ne: null },
       $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
     };
-    const [data, total] = await Promise.all([
-      this.tripPlanModel
-        .find(filter)
-        .select('-userId')
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .exec(),
-      this.tripPlanModel.countDocuments(filter).exec(),
-    ]);
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return this.tripPlanRepository.findPage(filter, page, limit);
   }
 
   async getPlanById(
@@ -126,10 +105,7 @@ export class TripPlannerService {
       throw new NotFoundException('ID kế hoạch không hợp lệ.');
     }
 
-    const plan = await this.tripPlanModel
-      .findById(id)
-      .select('+guestTokenHash')
-      .exec();
+    const plan = await this.tripPlanRepository.findByIdWithGuestToken(id);
     if (!plan) {
       throw new NotFoundException('Không tìm thấy kế hoạch du lịch này.');
     }
@@ -160,10 +136,7 @@ export class TripPlannerService {
       throw new NotFoundException('ID kế hoạch không hợp lệ.');
     }
 
-    const plan = await this.tripPlanModel
-      .findById(id)
-      .select('+guestTokenHash')
-      .exec();
+    const plan = await this.tripPlanRepository.findByIdWithGuestToken(id);
     if (!plan) {
       throw new NotFoundException('Không tìm thấy kế hoạch du lịch để xóa.');
     }
@@ -182,7 +155,7 @@ export class TripPlannerService {
       );
     }
 
-    await this.tripPlanModel.findByIdAndDelete(id).exec();
+    await this.tripPlanRepository.deleteById(id);
     return { message: 'Đã xóa kế hoạch du lịch thành công.' };
   }
 
@@ -194,26 +167,18 @@ export class TripPlannerService {
     if (!Types.ObjectId.isValid(id) || !guestToken) {
       throw new ForbiddenException('Guest manage token không hợp lệ.');
     }
-    const plan = await this.tripPlanModel
-      .findOne({ _id: id, userId: null })
-      .select('+guestTokenHash')
-      .exec();
+    const plan = await this.tripPlanRepository.findGuestPlanWithToken(id);
     if (
       !plan?.guestTokenHash ||
       !(await comparePassword(guestToken, plan.guestTokenHash))
     ) {
       throw new ForbiddenException('Guest manage token không hợp lệ.');
     }
-    const claimed = await this.tripPlanModel
-      .findOneAndUpdate(
-        { _id: id, userId: null, guestTokenHash: plan.guestTokenHash },
-        {
-          $set: { userId: new Types.ObjectId(userId), expiresAt: null },
-          $unset: { guestTokenHash: '' },
-        },
-        { new: true },
-      )
-      .exec();
+    const claimed = await this.tripPlanRepository.claimGuestPlan(
+      id,
+      userId,
+      plan.guestTokenHash,
+    );
     if (!claimed) {
       throw new ForbiddenException('Kế hoạch đã được nhận bởi tài khoản khác.');
     }
@@ -232,7 +197,7 @@ export class TripPlannerService {
       throw new NotFoundException('ID kế hoạch không hợp lệ.');
     }
 
-    const plan = await this.tripPlanModel.findById(id).exec();
+    const plan = await this.tripPlanRepository.findById(id);
     if (!plan) {
       throw new NotFoundException('Không tìm thấy kế hoạch du lịch.');
     }
@@ -243,6 +208,6 @@ export class TripPlannerService {
     }
 
     plan.isPublic = !plan.isPublic;
-    return plan.save();
+    return this.tripPlanRepository.save(plan);
   }
 }

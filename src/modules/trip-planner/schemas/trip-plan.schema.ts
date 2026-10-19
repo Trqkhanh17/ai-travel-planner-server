@@ -118,7 +118,7 @@ export class TripPlan {
     default: null,
     index: true,
   })
-  userId?: Types.ObjectId;
+  userId?: Types.ObjectId | null;
 
   @Prop({ type: String, select: false })
   guestTokenHash?: string;
